@@ -6,7 +6,21 @@ from lxml import etree
 import time
 import hashlib
 
-BIRTHDAY = datetime.datetime(2006, 1, 18)  # <-- set your real birthday
+# ---------------------------------------------------------------------------
+# SETUP (do this once):
+# 1. Create a GitHub fine-grained Personal Access Token with:
+#      Account permissions:    read:Followers, read:Starring, read:Watching
+#      Repository permissions: read:Commit statuses, read:Contents,
+#                               read:Issues, read:Metadata, read:Pull Requests
+# 2. In your repo -> Settings -> Secrets and variables -> Actions, add:
+#      ACCESS_TOKEN = the token from step 1
+#      USER_NAME    = your GitHub username
+# 3. Update BIRTHDAY below (used for the "Uptime" field).
+# 4. Make sure a `cache/` folder exists in the repo (an empty `cache/.gitkeep`
+#    file is enough) — it's used to avoid re-scanning unchanged repos.
+# ---------------------------------------------------------------------------
+
+BIRTHDAY = datetime.datetime(2004, 1, 1)  # <-- set your real birthday
 
 HEADERS = {'authorization': 'token ' + os.environ['ACCESS_TOKEN']}
 USER_NAME = os.environ['USER_NAME']
@@ -28,7 +42,7 @@ def format_plural(unit):
 
 
 def simple_request(func_name, query, variables):
-    request = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=HEADERS)
+    request = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=HEADERS, timeout=30)
     if request.status_code == 200:
         return request
     raise Exception(func_name, ' has failed with a', request.status_code, request.text, QUERY_COUNT)
@@ -95,7 +109,7 @@ def recursive_loc(owner, repo_name, data, cache_comment, addition_total=0, delet
         }
     }'''
     variables = {'repo_name': repo_name, 'owner': owner, 'cursor': cursor}
-    request = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=HEADERS)
+    request = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=HEADERS, timeout=30)
     if request.status_code == 200:
         if request.json()['data']['repository']['defaultBranchRef'] is not None:
             return loc_counter_one_repo(owner, repo_name, data, cache_comment, request.json()['data']['repository']['defaultBranchRef']['target']['history'], addition_total, deletion_total, my_commits)
@@ -108,10 +122,14 @@ def recursive_loc(owner, repo_name, data, cache_comment, addition_total=0, delet
 
 def loc_counter_one_repo(owner, repo_name, data, cache_comment, history, addition_total, deletion_total, my_commits):
     for node in history['edges']:
-        if node['node']['author']['user'] == OWNER_ID:
+        commit = node.get('node')
+        if not commit:
+            continue  # skip null commit entries instead of crashing
+        author = commit.get('author') or {}
+        if author.get('user') == OWNER_ID:
             my_commits += 1
-            addition_total += node['node']['additions']
-            deletion_total += node['node']['deletions']
+            addition_total += commit.get('additions') or 0
+            deletion_total += commit.get('deletions') or 0
     if history['edges'] == [] or not history['pageInfo']['hasNextPage']:
         return addition_total, deletion_total, my_commits
     return recursive_loc(owner, repo_name, data, cache_comment, addition_total, deletion_total, my_commits, history['pageInfo']['endCursor'])
@@ -173,6 +191,7 @@ def cache_builder(edges, comment_size, force_cache, loc_add=0, loc_del=0):
             try:
                 if int(commit_count) != edges[index]['node']['defaultBranchRef']['target']['history']['totalCount']:
                     owner, repo_name = edges[index]['node']['nameWithOwner'].split('/')
+                    print(f'  scanning {owner}/{repo_name} ...', flush=True)
                     loc = recursive_loc(owner, repo_name, data, cache_comment)
                     data[index] = repo_hash + ' ' + str(edges[index]['node']['defaultBranchRef']['target']['history']['totalCount']) + ' ' + str(loc[2]) + ' ' + str(loc[0]) + ' ' + str(loc[1]) + '\n'
             except TypeError:
@@ -209,7 +228,10 @@ def force_close_file(data, cache_comment):
 def stars_counter(data):
     total_stars = 0
     for node in data:
-        total_stars += node['node']['stargazers']['totalCount']
+        repo = node.get('node')
+        if not repo or not repo.get('stargazers'):
+            continue  # skip null/inaccessible repo entries instead of crashing
+        total_stars += repo['stargazers']['totalCount']
     return total_stars
 
 

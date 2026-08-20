@@ -31,9 +31,11 @@ jobs:
         env:
           ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
           USER_NAME: ${{ secrets.USER_NAME }}
+          PYTHONUNBUFFERED: "1"
         run: python main.py
 
       - name: Commit and push changes
+        if: always()
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
