@@ -20,7 +20,7 @@ import hashlib
 #    file is enough) — it's used to avoid re-scanning unchanged repos.
 # ---------------------------------------------------------------------------
 
-BIRTHDAY = datetime.datetime(2004, 1, 1)  # <-- set your real birthday
+BIRTHDAY = datetime.datetime(2006, 1, 18)  # <-- set your real birthday
 
 HEADERS = {'authorization': 'token ' + os.environ['ACCESS_TOKEN']}
 USER_NAME = os.environ['USER_NAME']
